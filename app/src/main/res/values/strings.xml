@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Thor OLED Guardian</string>
+    <string name="service_label">Thor OLED Guardian</string>
+    <string name="accessibility_summary">Schont beide OLED-Bildschirme, wenn niemand den Thor bedient oder ein Bildschirm lange unverändert bleibt.</string>
+    <string name="accessibility_description">Thor OLED Guardian erkennt, wann zuletzt eine Taste gedrückt oder ein Bildschirm berührt wurde, und blendet dann einen Schoner ein. Um Videos von einem stehenden Download-Fenster zu unterscheiden und statische HUDs abzudunkeln, macht der Dienst regelmäßig ein Bildschirmfoto, verkleinert es sofort auf ein grobes Helligkeitsraster und vergleicht es nur im Speicher. Es wird nichts gespeichert oder gesendet (die App hat keine Internet-Berechtigung), und es werden keine Texte oder Tasten aufgezeichnet.</string>
+</resources>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Keine Fensterinhalte (canRetrieveWindowContent=false). Bildschirmfotos nur für die Helligkeitsanalyse. -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/accessibility_description"
+    android:summary="@string/accessibility_summary"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeViewClicked|typeViewLongClicked"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:notificationTimeout="200"
+    android:canRetrieveWindowContent="false"
+    android:canRequestFilterKeyEvents="true"
+    android:canTakeScreenshot="true"
+    android:accessibilityFlags="flagRequestFilterKeyEvents"
+    android:isAccessibilityTool="false" />

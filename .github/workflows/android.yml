@@ -1,0 +1,63 @@
+name: Android-App
+# Baut Thor OLED Guardian und veröffentlicht die APK als Release (auf main als neueste Version, auf anderen
+# Branches als Vorabversion). Installation und Updates: README.md (APK aus dem Release oder über Obtainium).
+on:
+  push:
+    branches: [main, 'claude/**']
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Tests und APK bauen
+        env:
+          KEYSTORE_B64: ${{ secrets.GUARDIAN_KEYSTORE_B64 }}
+          GUARDIAN_KEYSTORE_PASSWORD: ${{ secrets.GUARDIAN_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/guardian.keystore"
+            export GUARDIAN_KEYSTORE="$RUNNER_TEMP/guardian.keystore"
+          else
+            unset GUARDIAN_KEYSTORE_PASSWORD
+          fi
+          chmod +x gradlew
+          set -o pipefail
+          ./gradlew --no-daemon --console=plain -PbuildNumber=${{ github.run_number }} \
+            :app:testReleaseUnitTest :app:assembleRelease 2>&1 | tee "$RUNNER_TEMP/build.log"
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/thor-oled-guardian.apk"
+      - name: Fehler zusammenfassen
+        if: failure()
+        run: |
+          grep -n -E "error:|FAILED|What went wrong|Could not|Exception|expected|AssertionError" "$RUNNER_TEMP/build.log" | head -60 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: thor-oled-guardian-apk
+          path: ${{ runner.temp }}/thor-oled-guardian.apk
+          retention-days: 14
+      - name: Release veröffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="0.2.${{ github.run_number }}"
+          NOTES="Thor OLED Guardian ${VERSION} – schont beide OLED-Bildschirme des AYN Thor. Noch nicht auf dem Gerät getestet. Installation und Einrichtung: README.md"
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            gh release create "v${VERSION}" "$RUNNER_TEMP/thor-oled-guardian.apk" --target "${{ github.sha }}" \
+              --title "Thor OLED Guardian ${VERSION}" --notes "$NOTES" --latest
+          else
+            gh release create "v${VERSION}" "$RUNNER_TEMP/thor-oled-guardian.apk" --target "${{ github.sha }}" \
+              --title "Thor OLED Guardian ${VERSION} (Vorabversion ${{ github.ref_name }})" --notes "$NOTES" --prerelease
+          fi

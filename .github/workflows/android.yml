@@ -52,7 +52,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="0.2.${{ github.run_number }}"
+          VERSION="0.3.${{ github.run_number }}"
           NOTES="Thor OLED Guardian ${VERSION} – schont beide OLED-Bildschirme des AYN Thor. Noch nicht auf dem Gerät getestet. Installation und Einrichtung: README.md"
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
             gh release create "v${VERSION}" "$RUNNER_TEMP/thor-oled-guardian.apk" --target "${{ github.sha }}" \

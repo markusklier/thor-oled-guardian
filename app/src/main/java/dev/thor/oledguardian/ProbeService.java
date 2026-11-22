@@ -26,12 +26,11 @@ import java.util.concurrent.TimeUnit;
  *  - Controller lesen (/dev/input), um zu merken, WANN Sticks/Tasten zuletzt bewegt wurden. Die Ereignisse gehen
  *    unverändert weiter ans Spiel; es wird nichts gespeichert, nichts weitergegeben, keine Tastenfolge gemerkt.
  *  - Summe der gelesenen/geschriebenen Bytes aller Speicher (/proc/diskstats) – erkennt lokale Kopien.
- *  - Ersatz-Bildanalyse mit {@code screencap}, falls Android der Bedienungshilfe kein Bildschirmfoto gibt.
  *  - Feste Befehle: Thor schlafen legen, Android-Bildschirm-Timeout setzen.
  */
 public final class ProbeService extends Binder {
     static final String DESCRIPTOR = "dev.thor.oledguardian.Probe";
-    static final int TX_STATUS = 1, TX_INPUT = 2, TX_DISK = 3, TX_SLEEP = 4, TX_TIMEOUT = 5, TX_CAPTURE = 6;
+    static final int TX_STATUS = 1, TX_INPUT = 2, TX_DISK = 3, TX_SLEEP = 4, TX_TIMEOUT = 5;
     /** Von Shizuku reserviert: Dienst beenden. */
     static final int TX_DESTROY = 16777115;
 
@@ -55,7 +54,7 @@ public final class ProbeService extends Binder {
             System.exit(0);
             return true;
         }
-        if (code < TX_STATUS || code > TX_CAPTURE) return false;
+        if (code < TX_STATUS || code > TX_TIMEOUT) return false;
         data.enforceInterface(DESCRIPTOR);
         switch (code) {
             case TX_STATUS:
@@ -78,12 +77,6 @@ public final class ProbeService extends Binder {
             case TX_TIMEOUT: {
                 int ms = Math.max(15_000, Math.min(24 * 3600_000, data.readInt()));
                 reply.writeInt(run(5_000, "settings", "put", "system", "screen_off_timeout", String.valueOf(ms)) != null ? 1 : 0);
-                return true;
-            }
-            case TX_CAPTURE: {
-                String phys = data.readString();
-                int step = Math.max(2, data.readInt());
-                capture(phys, step, reply);
                 return true;
             }
             default:
@@ -177,54 +170,6 @@ public final class ProbeService extends Binder {
             }
         }
         return sectors * 512L;
-    }
-
-    // ---------------------------------------------------------------- Ersatz-Bildanalyse
-
-    private static void capture(String phys, int step, Parcel reply) {
-        byte[] raw = null;
-        try {
-            ProcessBuilder pb = phys == null || phys.isEmpty()
-                    ? new ProcessBuilder("screencap") : new ProcessBuilder("screencap", "-d", phys);
-            Process p = pb.redirectErrorStream(false).start();
-            raw = readAll(p.getInputStream(), 40_000_000);
-            if (!p.waitFor(5, TimeUnit.SECONDS)) p.destroyForcibly();
-        } catch (Exception e) {
-            raw = null;
-        }
-        if (raw == null || raw.length < 16) {
-            reply.writeInt(0);
-            reply.writeInt(0);
-            reply.writeByteArray(new byte[0]);
-            return;
-        }
-        ByteBuffer b = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN);
-        int w = b.getInt(0), h = b.getInt(4), f = b.getInt(8);
-        int bpp = f == 4 ? 2 : (f == 3 ? 3 : 4);
-        long pixels = (long) w * h * bpp;
-        int header = (int) (raw.length - pixels);
-        if (w <= 0 || h <= 0 || (header != 12 && header != 16) || bpp != 4) {
-            reply.writeInt(0);
-            reply.writeInt(0);
-            reply.writeByteArray(new byte[0]);
-            return;
-        }
-        int sw = w / step, sh = h / step;
-        byte[] luma = new byte[sw * sh];
-        boolean bgra = f == 5;
-        for (int y = 0; y < sh; y++) {
-            int py = y * step + step / 2;
-            for (int x = 0; x < sw; x++) {
-                int px = x * step + step / 2;
-                int o = header + (py * w + px) * 4;
-                int r = raw[o] & 0xFF, g = raw[o + 1] & 0xFF, bl = raw[o + 2] & 0xFF;
-                if (bgra) { int t = r; r = bl; bl = t; }
-                luma[y * sw + x] = (byte) ((r * 54 + g * 183 + bl * 19) >> 8);
-            }
-        }
-        reply.writeInt(sw);
-        reply.writeInt(sh);
-        reply.writeByteArray(luma);
     }
 
     // ---------------------------------------------------------------- Hilfen

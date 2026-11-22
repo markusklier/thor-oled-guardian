@@ -45,7 +45,6 @@ public final class MainActivity extends Activity {
     private TextView serviceLine, probeLine, inputLine, foregroundLine, transferLine, timeoutLine;
     private Button serviceButton, probeButton, timeoutButton;
     private final List<TextView[]> roleLines = new ArrayList<>();
-    private final List<MiniMapView> maps = new ArrayList<>();
     private LinearLayout appsBox;
     private String appsShown = "";
 
@@ -119,18 +118,9 @@ public final class MainActivity extends Activity {
             TextView name = text("", 15, TEXT, true);
             name.setPadding(0, px(14), 0, px(2));
             status.addView(name);
-            TextView[] lines = {name, line(status), line(status), line(status), line(status)};
+            TextView[] lines = {name, line(status), line(status), line(status)};
             roleLines.add(lines);
-            MiniMapView map = new MiniMapView(this);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-            lp.topMargin = px(6);
-            status.addView(map, lp);
-            maps.add(map);
         }
-        TextView legend = text("■ bewegt   ■ ruhig   ■ statisch & hell   ■ abgedunkelt", 12, MUTED, false);
-        legend.setText(legendText());
-        legend.setPadding(0, px(6), 0, 0);
-        status.addView(legend);
         button(status, "Schoner jetzt testen (beide Bildschirme)", v -> {
             GuardianAccessibilityService s = GuardianAccessibilityService.instance();
             if (s != null) s.blackoutNow();
@@ -143,8 +133,8 @@ public final class MainActivity extends Activity {
         toggle(away, GuardPrefs.ENABLED, "Automatischer Schutz", "Auch über die Schnellkachel „OLED Guardian“", true);
         choice(away, GuardPrefs.C_IDLE);
         choice(away, GuardPrefs.C_GAME_IDLE);
-        choice(away, GuardPrefs.C_MOTION, "Bewegt sich viel auf dem Bildschirm (Film, Zwischensequenz), wartet der Guardian. "
-                + "Ein Download-Fenster mit Fortschrittsbalken gilt als ruhig.");
+        choice(away, GuardPrefs.C_MOTION, "Spielt außerhalb eines Spiels ein Film oder Video (Android meldet Medienwiedergabe), "
+                + "wartet der Guardian. Läuft dabei Musik, gilt das auch – dann kommt der Schoner erst nach dieser Zeit.");
         styleChoice(away, GuardPrefs.STYLE, "Schoner", GuardPrefs.STYLES, GuardPrefs.STYLE_LABELS, GuardPrefs.STYLE_AURORA);
         choice(away, GuardPrefs.C_BLACK);
         choice(away, GuardPrefs.C_FADE);
@@ -156,9 +146,9 @@ public final class MainActivity extends Activity {
 
         // ---- Einzelner Bildschirm
         LinearLayout single = card("Ein Bildschirm wird nicht benutzt");
-        hint(single, "Du spielst oben, unten steht seit Minuten dasselbe (Launcher, Temperaturanzeige, Legende): "
-                + "Dann wird nur der untere geschont. Bewegt er sich (z. B. Live-Karte), bleibt er an. "
-                + "Eine Berührung des Bildschirms holt ihn zurück.");
+        hint(single, "Du spielst oben und berührst den unteren Bildschirm minutenlang nicht (Launcher, Temperaturanzeige, "
+                + "Legende): Dann wird nur der untere geschont. „Abdunkeln“ lässt ihn sichtbar und bedienbar – "
+                + "eine Berührung holt ihn sofort zurück.");
         choice(single, GuardPrefs.C_UNUSED_SECOND);
         choice(single, GuardPrefs.C_UNUSED_MAIN);
         styleChoice(single, GuardPrefs.UNUSED_STYLE, "Darstellung", GuardPrefs.UNUSED_STYLES, GuardPrefs.UNUSED_STYLE_LABELS,
@@ -167,15 +157,16 @@ public final class MainActivity extends Activity {
                 "Einschalten, wenn du Spiele auf dem unteren Bildschirm mit Controller spielst", false);
 
         // ---- Spielschutz
-        LinearLayout hud = card("Spielschutz: statische Bereiche abdunkeln");
+        LinearLayout hud = card("Spielschutz (experimentell)");
         hint(hud, "Wie bei OLED-Fernsehern: Bereiche, die hell sind und sich lange nicht ändern (HUD, Lebensleiste, "
-                + "Legenden, Temperaturanzeige), werden langsam und kaum merklich gedimmt – der Rest bleibt hell. "
-                + "Ändert sich dort etwas, ist die Abdunkelung sofort weg. Berührungen gehen immer durch.");
-        toggle(hud, GuardPrefs.HUD_MAIN, "Oberer Bildschirm", null, true);
-        toggle(hud, GuardPrefs.HUD_SECOND, "Unterer Bildschirm", null, true);
+                + "Legenden), werden langsam und kaum merklich gedimmt – der Rest bleibt hell. Ändert sich dort etwas, "
+                + "ist die Abdunkelung schnell wieder weg. Berührungen gehen immer durch.\n"
+                + "Dafür macht der Guardian nur während eines Spiels alle 30 Sekunden ein Bildschirmfoto (sofort auf ein "
+                + "grobes Helligkeitsraster verkleinert, nichts wird gespeichert). Ruckelt ein Spiel dadurch, wieder ausschalten.");
+        toggle(hud, GuardPrefs.HUD_MAIN, "Oberer Bildschirm", null, false);
+        toggle(hud, GuardPrefs.HUD_SECOND, "Unterer Bildschirm", null, false);
         choice(hud, GuardPrefs.C_HUD_AFTER);
         choice(hud, GuardPrefs.C_HUD_STRENGTH);
-        choice(hud, GuardPrefs.C_ANALYSIS, "Häufigere Analyse reagiert schneller, kostet aber etwas mehr Akku.");
 
         // ---- Bedienung
         LinearLayout input = card("Aufwecken");
@@ -209,25 +200,12 @@ public final class MainActivity extends Activity {
             startActivity(i);
         });
 
-        TextView privacy = text("Datenschutz: keine Internet-Berechtigung, keine Speicherung. Bildschirmfotos werden sofort "
-                + "auf ein grobes Helligkeitsraster (1 Wert je 8×8 Pixel) verkleinert und nur im Speicher verglichen. "
-                + "Tasten werden nicht aufgezeichnet – nur der Zeitpunkt der letzten Eingabe. "
+        TextView privacy = text("Datenschutz: keine Internet-Berechtigung, keine Speicherung. Tasten werden nicht aufgezeichnet – "
+                + "nur der Zeitpunkt der letzten Eingabe. Bildschirmfotos gibt es nur mit eingeschaltetem Spielschutz; sie werden "
+                + "sofort auf ein grobes Helligkeitsraster verkleinert und nur im Speicher verglichen. "
                 + "Ersetzt nicht die Pixelpflege der AYN-Firmware.", 12, MUTED, false);
         privacy.setPadding(px(4), px(18), px(4), 0);
         root.addView(privacy);
-    }
-
-    private CharSequence legendText() {
-        android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder();
-        int[] colors = {MiniMapView.MOVING, MiniMapView.CALM, MiniMapView.STATIC, MiniMapView.DIMMED, MiniMapView.DARK};
-        String[] names = {"bewegt", "ruhig", "statisch & hell", "abgedunkelt", "dunkel"};
-        for (int i = 0; i < colors.length; i++) {
-            int start = sb.length();
-            sb.append("■ ");
-            sb.setSpan(new android.text.style.ForegroundColorSpan(colors[i]), start, start + 1, 0);
-            sb.append(names[i]).append("    ");
-        }
-        return sb;
     }
 
     // ================================================================ Live-Status
@@ -255,10 +233,9 @@ public final class MainActivity extends Activity {
                 l[0].setText(r.name + ": " + r.mode);
                 l[1].setText(r.display);
                 l[2].setText(r.analysis);
+                l[2].setVisibility(r.analysis.isEmpty() ? View.GONE : View.VISIBLE);
                 l[3].setText(r.overlay);
                 l[3].setVisibility(r.overlay.isEmpty() ? View.GONE : View.VISIBLE);
-                l[4].setVisibility(View.GONE);
-                maps.get(i).set(r.map, r.anim, r.width, r.height);
             }
             String recent = String.join(",", s.recentApps());
             if (!recent.equals(appsShown)) {

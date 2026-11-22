@@ -35,7 +35,6 @@ public final class GuardPrefs {
     public static final String HUD_SECOND = "hud_second";
     public static final String HUD_AFTER_S = "hud_after_s";
     public static final String HUD_STRENGTH = "hud_strength";
-    public static final String ANALYSIS_S = "analysis_s";
     public static final String FIRST_KEY = "first_key";
     public static final String EXCLUDED = "excluded";
     public static final String GAMES = "games";
@@ -69,8 +68,8 @@ public final class GuardPrefs {
             new int[]{60, 120, 180, 300, 600}, new String[]{"nach 1 Minute", "nach 2 Minuten", "nach 3 Minuten", "nach 5 Minuten", "nach 10 Minuten"});
     public static final Choice C_GAME_IDLE = new Choice(GAME_IDLE_S, "… während ein Spiel läuft", 600,
             new int[]{180, 300, 600, 1200, 1800, 0}, new String[]{"nach 3 Minuten", "nach 5 Minuten", "nach 10 Minuten", "nach 20 Minuten", "nach 30 Minuten", "nie"});
-    public static final Choice C_MOTION = new Choice(MOTION_MAX_S, "Videos und Zwischensequenzen laufen lassen", 2700,
-            new int[]{0, 900, 2700, 7200}, new String[]{"nicht beachten", "bis 15 Minuten", "bis 45 Minuten", "bis 2 Stunden"});
+    public static final Choice C_MOTION = new Choice(MOTION_MAX_S, "Läuft ein Video, warten", 1800,
+            new int[]{0, 900, 1800, 7200}, new String[]{"nicht beachten", "bis 15 Minuten", "bis 30 Minuten", "bis 2 Stunden"});
     public static final Choice C_BLACK = new Choice(BLACK_AFTER_S, "Danach komplett schwarz", 180,
             new int[]{0, 60, 180, 600, -1}, new String[]{"sofort", "nach 1 Minute", "nach 3 Minuten", "nach 10 Minuten", "nie"});
     public static final Choice C_FADE = new Choice(FADE_S, "Übergang", 6,
@@ -85,8 +84,6 @@ public final class GuardPrefs {
             new int[]{60, 180, 300, 600}, new String[]{"1 Minute", "3 Minuten", "5 Minuten", "10 Minuten"});
     public static final Choice C_HUD_STRENGTH = new Choice(HUD_STRENGTH, "Stärke", 45,
             new int[]{30, 45, 60}, new String[]{"sanft (30 %)", "mittel (45 %)", "stark (60 %)"});
-    public static final Choice C_ANALYSIS = new Choice(ANALYSIS_S, "Bildanalyse", 15,
-            new int[]{8, 15, 30}, new String[]{"genau (alle 8 s)", "ausgewogen (alle 15 s)", "sparsam (alle 30 s)"});
 
     public static final String[] STYLES = {STYLE_AURORA, STYLE_GLASS, STYLE_CLOCK, STYLE_BLACK};
     public static final String[] STYLE_LABELS = {"Aurora – dunkle, fließende Farben", "Glas – Inhalt schimmert gedämpft durch",
@@ -108,7 +105,8 @@ public final class GuardPrefs {
     public static boolean info(Context c) { return b(c, INFO, true); }
     public static boolean keepAwake(Context c) { return b(c, KEEP_AWAKE, true); }
     public static boolean firstKeyOnlyWakes(Context c) { return b(c, FIRST_KEY, true); }
-    public static boolean hud(Context c, int role) { return b(c, role == 0 ? HUD_MAIN : HUD_SECOND, true); }
+    /** Spielschutz (experimentell, macht Bildschirmfotos) – standardmäßig aus. */
+    public static boolean hud(Context c, int role) { return b(c, role == 0 ? HUD_MAIN : HUD_SECOND, false); }
 
     public static GuardEngine.Config config(Context c) {
         GuardEngine.Config g = new GuardEngine.Config();

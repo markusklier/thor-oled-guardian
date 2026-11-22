@@ -6,9 +6,9 @@ package dev.thor.oledguardian.engine;
  *
  * Zwei Auslöser:
  *  - ABWESENHEIT: niemand hat irgendetwas bedient (Taste, Stick, Berührung auf irgendeinem Bildschirm).
- *    Bewegte Inhalte (Video, Zwischensequenz) verschieben den Start, aber höchstens bis {@link Config#motionMaxMs}.
- *  - UNBENUTZT: ein einzelner Bildschirm wurde nicht berührt und zeigt nichts Bewegtes (z. B. der untere,
- *    während oben gespielt wird). Nur eine Berührung dieses Bildschirms weckt ihn.
+ *    Ein laufendes Video (Medienwiedergabe außerhalb von Spielen) verschiebt den Start, höchstens bis {@link Config#motionMaxMs}.
+ *  - UNBENUTZT: ein einzelner Bildschirm wurde länger nicht berührt (z. B. der untere, während oben gespielt
+ *    wird). Nur eine Berührung dieses Bildschirms weckt ihn.
  *
  * Zeiten sind Millisekunden einer monotonen Uhr (SystemClock.uptimeMillis). {@link #NEVER} = nie passiert.
  */
@@ -24,8 +24,8 @@ public final class GuardEngine {
         public long idleMs = 120_000;
         /** Abwesenheit, während ein Spiel/Emulator im Vordergrund ist; 0 = nie. */
         public long gameIdleMs = 600_000;
-        /** Bewegte Inhalte halten den Schoner höchstens so lange auf; 0 = Bewegung nicht berücksichtigen. */
-        public long motionMaxMs = 2_700_000;
+        /** Laufende Videos halten den Schoner höchstens so lange auf; 0 = nicht berücksichtigen. */
+        public long motionMaxMs = 1_800_000;
         /** Übergang vom normalen Bild zum Schoner. */
         public long fadeMs = 6_000;
         /** Schoner → komplett schwarz; 0 = sofort schwarz, &lt;0 = nie. */
@@ -48,7 +48,7 @@ public final class GuardEngine {
     public static final class Signals {
         public long lastKeyOrStick = NEVER;
         public long[] lastTouch;
-        /** Letzte Analyse, die auf dem Bildschirm deutliche Bewegung fand. */
+        /** Zuletzt gesehen, dass auf diesem Bildschirm ein Video läuft. */
         public long[] lastLively;
         /** Bildschirm ist eingeschaltet (nicht über den AYN-Knopf abgeschaltet). */
         public boolean[] displayOn;

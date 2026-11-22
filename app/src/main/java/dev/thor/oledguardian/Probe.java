@@ -11,7 +11,7 @@ import rikka.shizuku.Shizuku;
 
 /**
  * Verbindung zum Präzisionsmodus ({@link ProbeService}) über Shizuku. Alles ist optional: Ohne Shizuku arbeitet der
- * Guardian mit der Bedienungshilfe allein (Tasten, Berührungen, Bildanalyse), nur Sticks und lokale Kopien fehlen.
+ * Guardian mit der Bedienungshilfe allein (Tasten, Berührungen, Medienwiedergabe), nur Sticks und lokale Kopien fehlen.
  * Aufrufe blockieren kurz – nie auf dem Hauptthread verwenden.
  */
 final class Probe {
@@ -129,20 +129,6 @@ final class Probe {
         Parcel r = call(ProbeService.TX_TIMEOUT, p -> p.writeInt(ms));
         if (r == null) return false;
         try { return r.readInt() == 1; } finally { r.recycle(); }
-    }
-
-    /** Helligkeitswerte (je step×step Pixel) über screencap: {w, h} in size, Werte als Rückgabe. */
-    static byte[] capture(String physicalId, int step, int[] size) {
-        Parcel r = call(ProbeService.TX_CAPTURE, p -> { p.writeString(physicalId); p.writeInt(step); });
-        if (r == null) return null;
-        try {
-            size[0] = r.readInt();
-            size[1] = r.readInt();
-            byte[] luma = r.createByteArray();
-            return size[0] > 0 && luma != null && luma.length >= size[0] * size[1] ? luma : null;
-        } finally {
-            r.recycle();
-        }
     }
 
     private interface Writer { void write(Parcel p); }

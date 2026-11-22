@@ -7,7 +7,9 @@ für das, was auf seinem Thor wirklich geht: Shizuku läuft, Display 0 = oben 19
 ## Regeln
 
 - Alle Texte in der App: **Deutsch mit echten Umlauten**.
-- Keine Internet-Berechtigung, nichts speichern außer Einstellungen. Bildschirmfotos nur als Helligkeitsraster im Speicher.
+- Keine Internet-Berechtigung, nichts speichern außer Einstellungen. Bildschirmfotos nur für den optionalen Spielschutz
+  (standardmäßig aus, nur während eines Spiels) und nur als Helligkeitsraster im Speicher. Die Erkennung von Download,
+  Video und Spiel kommt ohne Fotos aus (Entscheidung von Markus, 22.11.2026).
 - Nie `AccessibilityService.onMotionEvent`/Bewegungsquellen abonnieren: Android nimmt sie dann dem Spiel weg.
   Sticks nur lesend über `/dev/input` im Shizuku-Dienst.
 - Overlays immer `FLAG_NOT_FOCUSABLE` (sonst verliert das Spiel den Fokus und pausiert).

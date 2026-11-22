@@ -15,7 +15,9 @@ import android.graphics.PixelFormat;
 import android.graphics.Point;
 import android.hardware.HardwareBuffer;
 import android.hardware.display.DisplayManager;
+import android.media.AudioAttributes;
 import android.media.AudioManager;
+import android.media.AudioPlaybackConfiguration;
 import android.net.TrafficStats;
 import android.os.Build;
 import android.os.Handler;
@@ -44,17 +46,15 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
- * Herz des Guardians. Sammelt, was Android ohne Root hergibt (Tasten, Berührungen je Bildschirm, Bildschirmfotos
- * für die Bewegungsanalyse, die App im Vordergrund, Datenverkehr) – optional ergänzt durch den Präzisionsmodus
- * (Shizuku: Sticks, lokale Kopien, Schlafen legen). Daraus entscheidet {@link GuardEngine} je Bildschirm; dieser
- * Dienst zeichnet Schoner und Spielschutz-Abdunkelung als Overlays.
+ * Herz des Guardians. Sammelt, was Android ohne Root hergibt (Tasten, Berührungen je Bildschirm, die App im
+ * Vordergrund, laufende Medienwiedergabe, Datenverkehr) – optional ergänzt durch den Präzisionsmodus (Shizuku: Sticks,
+ * lokale Kopien, Schlafen legen). Daraus entscheidet {@link GuardEngine} je Bildschirm; dieser Dienst zeichnet die
+ * Schoner als Overlays.
  *
- * Datenschutz: Bildschirmfotos werden sofort auf ein grobes Helligkeitsraster (1 Wert je 8×8 Pixel) verkleinert und
- * nur im Speicher verglichen; nichts wird gespeichert oder gesendet. Es werden keine Texte oder Tasten aufgezeichnet.
+ * Bildschirmfotos nur für den optionalen Spielschutz (standardmäßig aus) und nur, während ein Spiel läuft: sofort auf
+ * ein grobes Helligkeitsraster (1 Wert je 8×8 Pixel) verkleinert, nur im Speicher verglichen, nie gespeichert.
  */
 public final class GuardianAccessibilityService extends AccessibilityService {
     private static volatile GuardianAccessibilityService instance;
@@ -95,6 +95,7 @@ public final class GuardianAccessibilityService extends AccessibilityService {
     private boolean probeBusy;
     private String foreground = "";
     private String sleepNote = "";
+    private boolean mediaPlaying;
     private long lastTick;
     private boolean tickScheduled;
 
@@ -118,11 +119,7 @@ public final class GuardianAccessibilityService extends AccessibilityService {
         long lastCapture = GuardEngine.NEVER;
         long lastCaptureOk = GuardEngine.NEVER;
         boolean captureBusy;
-        int captureFails;
         String captureNote = "noch keine Analyse";
-        float motion = -1f;
-        boolean dark;
-        String physicalId = "";
         int widthPx, heightPx;
 
         Screen(int role) { this.role = role; }
@@ -293,10 +290,10 @@ public final class GuardianAccessibilityService extends AccessibilityService {
         signals.lastKeyOrStick = Math.max(a11yKey, Math.max(probeKey, probeStick));
         signals.gameForeground = GameApps.isGame(this, foreground);
         signals.excluded = GuardPrefs.isExcluded(this, foreground);
-        for (Screen s : screens) {
-            signals.displayOn[s.role] = s.display != null && isOn(s.display);
-            if (s.role == 0 && audioFallback(s, now)) signals.lastLively[0] = now;
-        }
+        for (Screen s : screens) signals.displayOn[s.role] = s.display != null && isOn(s.display);
+        // Film/Video: Android meldet eine laufende Medienwiedergabe. In Spielen zählt das nicht – die spielen fast immer Ton.
+        mediaPlaying = mediaPlaying();
+        if (mediaPlaying && !signals.gameForeground) signals.lastLively[0] = now;
 
         engine.update(now, signals, config);
         if (engine.takeSleepRequest()) sleepDevice();
@@ -312,10 +309,19 @@ public final class GuardianAccessibilityService extends AccessibilityService {
                 || st == Display.STATE_UNKNOWN);
     }
 
-    /** Ohne Bildanalyse: Ton außerhalb von Spielen = vermutlich Video. Bei geschütztem (schwarzem) Video ebenso. */
-    private boolean audioFallback(Screen s, long now) {
-        boolean noAnalysis = now - s.lastCaptureOk > 60_000 || s.dark;
-        return noAnalysis && audio != null && audio.isMusicActive() && (!signals.gameForeground || s.dark);
+    /** Läuft gerade Medienton (Film, Video, Musik)? Ohne Zusatzrecht; welche App spielt, verrät Android nicht. */
+    private boolean mediaPlaying() {
+        if (audio == null) return false;
+        try {
+            for (AudioPlaybackConfiguration c : audio.getActivePlaybackConfigurations()) {
+                AudioAttributes a = c.getAudioAttributes();
+                if (a != null && (a.getUsage() == AudioAttributes.USAGE_MEDIA || a.getUsage() == AudioAttributes.USAGE_UNKNOWN)
+                        && a.getContentType() != AudioAttributes.CONTENT_TYPE_SONIFICATION) return true;
+            }
+            return false;
+        } catch (RuntimeException e) {
+            return audio.isMusicActive();
+        }
     }
 
     // ================================================================ Präzisionsmodus
@@ -408,7 +414,6 @@ public final class GuardianAccessibilityService extends AccessibilityService {
             s.strategy = -1;
             s.map.clear();
             s.anim.hideNow();
-            s.physicalId = d == null ? "" : physicalId(d);
         }
         if (d != null) {
             Point size = new Point();
@@ -422,13 +427,6 @@ public final class GuardianAccessibilityService extends AccessibilityService {
                 removeMask(s);
             }
         }
-    }
-
-    private static final Pattern UNIQUE = Pattern.compile("uniqueId \"local:(\\d+)\"");
-
-    private static String physicalId(Display d) {
-        Matcher m = UNIQUE.matcher(String.valueOf(d));
-        return m.find() ? m.group(1) : "";
     }
 
     // ================================================================ Overlays
@@ -586,9 +584,8 @@ public final class GuardianAccessibilityService extends AccessibilityService {
     }
 
     private void renderMask(Screen s) {
-        boolean allowed = config.enabled && !signals.excluded && GuardPrefs.hud(this, s.role)
-                && engine.mode(s.role) == GuardEngine.Mode.ACTIVE;
-        if (!allowed) {
+        if (!hudActive(s) || engine.mode(s.role) != GuardEngine.Mode.ACTIVE) {
+            if (!hudActive(s)) s.map.clear();   // Spiel beendet oder Spielschutz aus: neu beginnen
             s.anim.hideNow();
             removeMask(s);
             return;
@@ -657,20 +654,19 @@ public final class GuardianAccessibilityService extends AccessibilityService {
 
     // ================================================================ Bildanalyse
 
+    /** Bildschirmfotos nur für den (standardmäßig ausgeschalteten) Spielschutz und nur, während ein Spiel läuft. */
+    private static final long HUD_INTERVAL_MS = 30_000, HUD_INTERVAL_MASKED_MS = 10_000;
+
+    private boolean hudActive(Screen s) {
+        return config.enabled && !signals.excluded && signals.gameForeground && GuardPrefs.hud(this, s.role);
+    }
+
     private void scheduleCaptures(long now) {
-        int interval = GuardPrefs.i(this, GuardPrefs.C_ANALYSIS) * 1000;
-        long lastAny = signals.lastKeyOrStick;
-        for (long t : signals.lastTouch) lastAny = Math.max(lastAny, t);
-        long absentLimit = signals.gameForeground ? config.gameIdleMs : config.idleMs;
         for (Screen s : screens) {
             if (s.display == null || !signals.displayOn[s.role] || s.captureBusy) continue;
-            if (engine.mode(s.role) != GuardEngine.Mode.ACTIVE) continue;
-            if (!config.enabled || signals.excluded) continue;
-            boolean hud = GuardPrefs.hud(this, s.role);
-            long unused = s.role < config.unusedMs.length ? config.unusedMs[s.role] : 0;
-            boolean nearAbsent = config.motionMaxMs > 0 && absentLimit > 0 && now - lastAny > absentLimit - 3L * interval;
-            if (!hud && unused == 0 && !nearAbsent) continue;   // gerade nichts zu entscheiden: kein Foto
-            long every = s.anim.visible() ? Math.min(interval, 6_000) : interval;
+            if (engine.mode(s.role) != GuardEngine.Mode.ACTIVE || !hudActive(s)) continue;
+            // Solange etwas abgedunkelt ist, öfter nachsehen, damit es verschwindet, sobald sich dort etwas bewegt.
+            long every = s.anim.visible() ? HUD_INTERVAL_MASKED_MS : HUD_INTERVAL_MS;
             if (now - s.lastCapture < every) continue;
             // nie zwei Fotos im selben Takt (Android begrenzt die Rate)
             Screen other = screens[1 - s.role];
@@ -687,15 +683,6 @@ public final class GuardianAccessibilityService extends AccessibilityService {
         final float[] maskNow = s.anim.cols() == s.map.cols() && s.anim.rows() == s.map.rows()
                 ? s.anim.current().clone() : null;
         final int displayId = s.display.getDisplayId();
-        boolean useProbe = s.captureFails >= 3 && Probe.connected();
-        if (useProbe) {
-            worker.execute(() -> {
-                int[] size = new int[2];
-                byte[] luma = Probe.capture(s.physicalId, StaticMap.STEP, size);
-                handler.post(() -> analysed(s, luma, size[0], size[1], maskNow, luma == null ? "screencap fehlgeschlagen" : "per Präzisionsmodus"));
-            });
-            return;
-        }
         try {
             takeScreenshot(displayId, worker, new TakeScreenshotCallback() {
                 @Override public void onSuccess(ScreenshotResult result) {
@@ -715,14 +702,10 @@ public final class GuardianAccessibilityService extends AccessibilityService {
                 }
 
                 @Override public void onFailure(int errorCode) {
-                    handler.post(() -> {
-                        s.captureFails++;
-                        analysed(s, null, 0, 0, null, "Bildschirmfoto abgelehnt (Code " + errorCode + ")");
-                    });
+                    handler.post(() -> analysed(s, null, 0, 0, null, "Bildschirmfoto abgelehnt (Code " + errorCode + ")"));
                 }
             });
         } catch (RuntimeException e) {
-            s.captureFails++;
             analysed(s, null, 0, 0, null, "Bildschirmfoto nicht verfügbar: " + e.getClass().getSimpleName());
         }
     }
@@ -767,22 +750,14 @@ public final class GuardianAccessibilityService extends AccessibilityService {
             s.captureNote = note;
             return;
         }
-        if (engine.mode(s.role) != GuardEngine.Mode.ACTIVE) return;   // Schoner kam dazwischen: Foto zeigt ihn selbst
-        s.captureFails = 0;
+        if (engine.mode(s.role) != GuardEngine.Mode.ACTIVE || !hudActive(s)) return;   // Foto zeigt den Schoner oder Spielschutz ist aus
         s.lastCaptureOk = now;
-        StaticMap.Result r = s.map.feed(luma, w, h, now, mask);
+        s.map.feed(luma, w, h, now, mask);
         s.anim.resize(s.map.cols(), s.map.rows());
-        s.motion = r.motion;
-        s.dark = r.dark;
         s.captureNote = note;
-        if (r.motion >= StaticMap.LIVELY && !r.dark) signals.lastLively[s.role] = now;
-        if (GuardPrefs.hud(this, s.role)) {
-            long after = GuardPrefs.i(this, GuardPrefs.C_HUD_AFTER) * 1000L;
-            float strength = GuardPrefs.i(this, GuardPrefs.C_HUD_STRENGTH) / 100f;
-            s.anim.setTargets(s.map.targets(after, strength));
-        } else {
-            s.anim.clearTargets();
-        }
+        long after = GuardPrefs.i(this, GuardPrefs.C_HUD_AFTER) * 1000L;
+        float strength = GuardPrefs.i(this, GuardPrefs.C_HUD_STRENGTH) / 100f;
+        s.anim.setTargets(s.map.targets(after, strength));
         if (s.anim.animating()) kickMaskAnimation();
     }
 
@@ -790,9 +765,6 @@ public final class GuardianAccessibilityService extends AccessibilityService {
 
     static final class RoleStatus {
         String name, display, mode, analysis, overlay;
-        int width, height;
-        StaticMap map;
-        MaskAnimator anim;
     }
 
     List<RoleStatus> roleStatus() {
@@ -801,10 +773,6 @@ public final class GuardianAccessibilityService extends AccessibilityService {
         for (Screen s : screens) {
             RoleStatus r = new RoleStatus();
             r.name = ROLE_NAMES[s.role];
-            r.map = s.map;
-            r.anim = s.anim;
-            r.width = s.widthPx;
-            r.height = s.heightPx;
             if (s.display == null) {
                 r.display = "nicht gefunden";
                 r.mode = "–";
@@ -816,12 +784,15 @@ public final class GuardianAccessibilityService extends AccessibilityService {
             r.display = "„" + s.display.getName() + "“ · ID " + s.display.getDisplayId() + " · " + s.widthPx + "×" + s.heightPx
                     + (signals.displayOn[s.role] ? "" : " · ausgeschaltet");
             r.mode = modeText(s.role);
-            if (s.lastCaptureOk == GuardEngine.NEVER) r.analysis = s.captureNote;
+            if (!GuardPrefs.hud(this, s.role)) r.analysis = "";
+            else if (!hudActive(s)) r.analysis = "Spielschutz: wartet auf ein Spiel";
+            else if (s.lastCaptureOk == GuardEngine.NEVER) r.analysis = "Spielschutz: " + s.captureNote;
             else {
-                String motion = s.dark ? "dunkel" : (s.motion >= StaticMap.LIVELY ? "bewegt" : "ruhig");
-                long ago = (now - s.lastCaptureOk) / 1000;
-                r.analysis = "Bild " + motion + String.format(Locale.GERMANY, " (%.0f %% verändert)", Math.max(0, s.motion) * 100)
-                        + " · vor " + ago + " s" + (s.captureNote.isEmpty() ? "" : " · " + s.captureNote);
+                int dimmed = 0;
+                for (float a : s.anim.current()) if (a > 0.02f) dimmed++;
+                r.analysis = "Spielschutz: " + (dimmed == 0 ? "nichts abgedunkelt" : dimmed + " Bereiche abgedunkelt")
+                        + " · letzte Analyse vor " + (now - s.lastCaptureOk) / 1000 + " s"
+                        + (s.captureNote.isEmpty() ? "" : " · " + s.captureNote);
             }
             String[] ways = {"Bedienungshilfe", "Bedienungshilfe (Fensterkontext)", "Über anderen Apps"};
             r.overlay = s.overlayError.isEmpty() ? (s.strategy >= 0 ? "Overlay: " + ways[s.strategy] : "") : s.overlayError;
@@ -863,6 +834,7 @@ public final class GuardianAccessibilityService extends AccessibilityService {
 
     String transferText() {
         String t = "Netz " + TransferMeter.format(net.bytesPerSec());
+        if (mediaPlaying) t += " · Medienwiedergabe läuft";
         if (probeDisk >= 0) t += " · Speicher " + TransferMeter.format(disk.bytesPerSec());
         return "Übertragung: " + t + (signals.transferActive ? " – läuft" : "") + (sleepNote.isEmpty() ? "" : " · " + sleepNote);
     }

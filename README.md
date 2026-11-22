@@ -3,9 +3,9 @@
 Schützt **beide OLED-Bildschirme des AYN Thor** vor Einbrennen und Nachbildern. Er arbeitet unabhängig davon, ob
 gerade der Launcher, eine App oder ein Emulator läuft, und fühlt sich an wie eine Funktion des Geräts. Kein Root nötig.
 
-> **Stand 0.2 – Vorabversion, noch nicht auf dem Thor getestet.** Die Entscheidungslogik ist mit 22 Tests geprüft;
-> wie sich Overlays, Bildschirmfotos und Berührungs-Erkennung auf dem zweiten Bildschirm des Thor verhalten, zeigt
-> erst der Gerätetest (Checkliste unten).
+> **Stand 0.3 – Vorabversion, noch nicht auf dem Thor getestet.** Die Entscheidungslogik ist mit 22 Tests geprüft;
+> wie sich Overlays und Berührungs-Erkennung auf dem zweiten Bildschirm des Thor verhalten, zeigt erst der
+> Gerätetest (Checkliste unten).
 
 ## Das Problem
 
@@ -19,49 +19,52 @@ gerade der Launcher, eine App oder ein Emulator läuft, und fühlt sich an wie e
 
 ## Wie der Guardian entscheidet
 
-Er wertet drei Signale aus, alle ohne Root:
+Er schaut, **was gerade passiert**, nicht, was angezeigt wird. Bildschirmfotos braucht er dafür nicht.
 
-| Signal | Woher | Wofür |
+| Signal | Woher |
+|---|---|
+| **Eingaben**: Tasten, Berührungen je Bildschirm, mit Shizuku auch Sticks und Trigger | Bedienungshilfe (Tastenfilter, unsichtbarer 1-Pixel-Berührungsfühler je Bildschirm), Shizuku liest `/dev/input` |
+| **Spiel oder App** im Vordergrund | Paketname aus der Bedienungshilfe, Android-Kategorie „Spiel“, Liste bekannter Emulatoren |
+| **Medienwiedergabe** (Film, Video, Musik) | Android meldet laufende Wiedergabe, ohne Zusatzrecht |
+| **Übertragung** | Netzwerkzähler von Android, mit Shizuku auch Speicherzugriffe (lokales Kopieren) |
+
+| Situation | Erkennung | Verhalten |
 |---|---|---|
-| **Eingaben**: Tasten, Berührungen je Bildschirm, mit Shizuku auch Sticks und Trigger | Bedienungshilfe (Tastenfilter, unsichtbarer 1-Pixel-Berührungsfühler je Bildschirm), Shizuku liest `/dev/input` | Ist jemand da? Welcher Bildschirm wird benutzt? |
-| **Bildanalyse**: Was hat sich seit dem letzten Mal verändert? | Bildschirmfoto der Bedienungshilfe alle 15 s, sofort verkleinert auf 1 Helligkeitswert je 8×8 Pixel | Film oder Zwischensequenz (viel Bewegung) vs. Download-Fenster (fast alles steht still); welche hellen Bereiche stehen seit Minuten still? |
-| **Übertragung** | Netzwerkzähler von Android, mit Shizuku auch die Speicherzugriffe (lokales Kopieren) | Anzeige „Download 12,3 MB/s“ im Schoner; auf Wunsch nach dem Ende schlafen legen |
+| **Download / Installation** | keine Eingabe, kein Medienton | nach 2 min Schoner, 3 min später schwarz, Thor bleibt wach; Anzeige „Download 12 MB/s“ |
+| **Film, YouTube** | Medienwiedergabe außerhalb eines Spiels | kein Schoner, erst nach 30 min ohne Eingabe (einstellbar) |
+| **Spiel mit Zwischensequenz** | Spiel oder Emulator im Vordergrund | erst nach 10 min ohne Taste |
+| **Spiel pausiert, du gehst weg** | Spiel + 10 min nichts | Schoner |
+| **Unten statisch, oben wird gespielt** | 5 min keine Berührung unten | unten nur abdunkeln, bleibt sichtbar und bedienbar; eine Berührung holt ihn zurück |
 
-Daraus ergeben sich drei Schutzstufen:
-
-### 1. Niemand bedient den Thor (beide Bildschirme)
-Keine Taste, kein Stick, keine Berührung für **2 Minuten**, in Spielen und Emulatoren für **10 Minuten**:
-
-1. Sanfter Übergang (6 s) in den gewählten **Schoner**:
+### Der Schoner
+1. Sanfter Übergang (6 s) in den gewählten Stil:
    - **Aurora**: dunkle, langsam fließende Farbflächen, bei denen kein Pixel stillsteht
    - **Glas**: der Inhalt schimmert gedämpft durch, darüber wandert ein weicher Lichtschein
    - **Uhr**: nur die Uhrzeit (und die Übertragung), die jede Minute weiterwandert
    - **Schwarz**: Pixel aus, keine Animation
-2. Nach **3 Minuten** komplett schwarz: Die OLED-Pixel sind aus, es läuft keine Animation mehr. Nur eine kleine, gedimmte
-   Zeile mit Uhrzeit und Datenrate wandert jede Minute an eine neue Stelle.
+2. Nach **3 Minuten** komplett schwarz, ohne Animation. Nur eine kleine, gedimmte Zeile mit Uhrzeit und Datenrate
+   wandert jede Minute weiter.
 3. Der Thor **bleibt wach**, damit Downloads weiterlaufen. Wer will, lässt ihn nach dem Ende der Übertragung schlafen.
-4. **Bewegte Inhalte** wie Filme oder Zwischensequenzen halten den Schoner auf, standardmäßig bis 45 Minuten.
-5. Jede Eingabe weckt beide Bildschirme. Die erste Taste weckt nur und erreicht das Spiel nicht.
+4. Jede Eingabe weckt beide Bildschirme. Die erste Taste weckt nur und erreicht das Spiel nicht.
+5. Kachel **„Bildschirme aus“**: beide Bildschirme sofort schwarz, der Thor bleibt wach.
 
-### 2. Ein Bildschirm wird nicht benutzt
-Du spielst oben, unten wurde seit **5 Minuten** nichts berührt, und dort bewegt sich nichts. Dann wird **nur der
-untere** geschont. Standard ist **Abdunkeln**: Der Bildschirm bleibt bedienbar, und eine Berührung holt ihn sofort
-zurück. Eine Live-Karte, die sich bewegt, bleibt an. Controller-Tasten wecken den unteren Bildschirm nicht, denn die
-gehören zum Spiel oben (lässt sich umstellen).
-
-### 3. Spielschutz: statische Bereiche abdunkeln
-Wie die Logo-Abdunkelung moderner OLED-Fernseher. Zellen von 64×64 Pixeln, die **hell sind und sich seit 3 Minuten
-nicht verändert haben**, werden über 20 Sekunden kaum merklich um 30–60 % gedimmt. Das betrifft HUD, Lebensleiste,
-Minimap-Rahmen, Legenden und die AYN-Temperaturanzeige. Der Rest des Bildes bleibt voll hell. Sobald sich in einer
-Zelle etwas ändert, ist ihre Abdunkelung in einer halben Sekunde weg. Berührungen gehen immer durch, und das Overlay
-deckt nur das Rechteck um die gedimmten Zellen ab. Die eigene Abdunkelung wird bei der nächsten Analyse
-herausgerechnet, damit sie nicht selbst als „statisch“ zählt.
+### Spielschutz (experimentell, standardmäßig aus)
+Wie die Logo-Abdunkelung moderner OLED-Fernseher. Helle Bereiche, die sich seit 3 Minuten nicht verändert haben (HUD,
+Lebensleiste, Legenden), werden kaum merklich um 30–60 % gedimmt; der Rest bleibt hell. Dafür ist ein Blick aufs Bild
+nötig: Der Guardian macht dann, **nur während ein Spiel läuft**, alle 30 s ein Bildschirmfoto (alle 10 s, solange etwas
+gedimmt ist), verkleinert es sofort auf 1 Helligkeitswert je 8×8 Pixel und vergleicht es nur im Speicher. Ruckelt ein
+Spiel dadurch, den Spielschutz wieder ausschalten.
 
 ### Ressourcen
-- 1 Takt pro Sekunde, sonst nichts.
-- Ein Bildschirmfoto alle 15 s, und nur wenn es gebraucht wird: Spielschutz an, ein Bildschirm ist unbenutzt, oder
-  die Abwesenheit steht kurz bevor. Läuft ein Schoner, wird nicht fotografiert.
-- Animationen laufen nur in der Aurora- und der Glas-Phase, mit 15 Bildern/s; im Schwarz-Zustand gibt es keine.
+Ohne Spielschutz macht der Dienst im Hintergrund einen Takt pro Sekunde und sonst nichts. Animationen laufen nur in der
+Aurora- und der Glas-Phase, mit 15 Bildern/s; im Schwarz-Zustand gibt es keine.
+
+### Brauche ich Shizuku?
+Nein. Ohne Shizuku fehlen nur Analogsticks und analoge Trigger, lokale Kopiervorgänge und das Schlafenlegen über
+Shizuku. Das Schlafenlegen geht auch über den Geräteadministrator. Kritisch ist nur, wenn man in einem Spiel über
+10 Minuten ausschließlich mit dem Stick spielt, ohne eine Taste zu drücken. Wird Shizuku später gestartet, verbindet
+sich der Guardian von selbst. Shizuku ab 13.6 kann unter Android 13 im vertrauenswürdigen WLAN ohne Root automatisch
+starten.
 
 ## Installieren
 
@@ -70,9 +73,8 @@ herausgerechnet, damit sie nicht selbst als „statisch“ zählt.
 2. Installieren. Weil die App nicht aus dem Play Store kommt, sperrt Android 13 zunächst die Bedienungshilfe:
    **Einstellungen → Apps → Thor OLED Guardian → ⋮ → Eingeschränkte Einstellungen zulassen**.
 3. In der App auf **Bedienungshilfe einschalten** tippen und „Thor OLED Guardian“ aktivieren.
-4. **Präzisionsmodus**: Shizuku läuft auf dem Thor bereits (wie für Handheld Atlas). In der App
-   **Shizuku-Freigabe erteilen** antippen. Dann erkennt der Guardian auch Analogsticks und Trigger. Das ist wichtig für
-   Spiele, die nur damit gesteuert werden, zum Beispiel Rennspiele.
+4. Optional **Präzisionsmodus**: Läuft Shizuku, in der App **Shizuku-Freigabe erteilen** antippen. Dann erkennt der
+   Guardian auch Analogsticks und Trigger.
 5. Die Schnellkacheln hinzufügen (Schnelleinstellungen → Bearbeiten):
    - **OLED Guardian**: automatischen Schutz pausieren oder fortsetzen
    - **Bildschirme aus**: beide Bildschirme sofort schwarz, der Thor bleibt wach; die nächste Eingabe weckt
@@ -89,30 +91,29 @@ Den AYN-eigenen Schutz würde ich vorerst eingeschaltet lassen. Der Guardian ers
 | 2 | „Schoner jetzt testen“ | Beide Bildschirme blenden ab; Taste oder Berührung weckt beide |
 | 3 | Kachel „Bildschirme aus“ | Wie 2, Schnelleinstellungen schließen sich |
 | 4 | Status → „Overlay“ je Bildschirm | Weg 1 oder 2; Weg 3 nur mit Erlaubnis „über anderen Apps“ |
-| 5 | Status → Bildanalyse unten | „Bild ruhig/bewegt … vor x s“, Karte füllt sich; bei „abgelehnt“ den Code notieren |
-| 6 | Download starten, 2 min nichts tun | Schoner mit „Download x MB/s“; nach 3 min schwarz; der Download läuft weiter |
-| 7 | Video 5 min ohne Eingabe | Kein Schoner (Bild „bewegt“) |
-| 8 | Spiel oben, unten Launcher, 5 min nur Controller | Unten dunkelt ab; Berührung unten holt ihn zurück; oben stört nichts |
-| 9 | Spiel mit HUD 5 min | HUD-Bereiche werden in der Karte orange, dann rot, und sind auf dem Gerät leicht gedimmt |
-| 10 | Rennspiel nur mit Stick/Trigger (Präzisionsmodus) | Kein Schoner, solange gefahren wird |
-| 11 | Ruckler? | Bei „genau (8 s)“ und „sparsam (30 s)“ vergleichen und melden, falls ein Bildschirmfoto spürbar ruckelt |
+| 5 | Download starten, 2 min nichts tun | Schoner mit „Download x MB/s“; nach 3 min schwarz; der Download läuft weiter |
+| 6 | YouTube-Video 5 min ohne Eingabe | Kein Schoner; Status zeigt „Medienwiedergabe läuft“ |
+| 7 | Spiel oben, unten Launcher, 5 min nur Controller | Unten dunkelt ab; Berührung unten holt ihn zurück; oben stört nichts |
+| 8 | Spiel pausieren, 10 min weggehen | Schoner auf beiden; erste Taste weckt, ohne im Spiel etwas auszulösen |
+| 9 | Optional: Spielschutz an, Spiel mit HUD 5 min | Status zeigt „x Bereiche abgedunkelt“, HUD leicht gedimmt; auf Ruckler achten |
 
 ## Grenzen
 
 - **Schwarz ist nicht ausgeschaltet**: Die Pixel leuchten nicht mehr, das Panel bleibt aber an (wie bei „Blacker“).
   Für das Einbrennen ist das gleichwertig, Strom spart es etwas weniger.
-- Geschützte Videos (DRM, zum Beispiel Netflix) erscheinen im Bildschirmfoto schwarz. Dann entscheidet der Ton: Läuft
-  außerhalb eines Spiels Ton, gilt das Bild als Video.
-- Ohne Shizuku sieht der Guardian keine Stickbewegungen. Spiele, die nur mit Stick gespielt werden, also ausnehmen oder
-  die Spiel-Wartezeit verlängern.
+- Medienwiedergabe heißt für Android auch Musik. Läuft während eines Downloads Musik, kommt der Schoner erst nach der
+  Video-Wartezeit (30 min). Welche App spielt, verrät Android ohne Zusatzrechte nicht.
+- Zwischensequenzen über 10 Minuten ohne Taste werden unterbrochen. Dann die Spiel-Wartezeit hochstellen.
+- Ohne Shizuku sieht der Guardian keine Stickbewegungen. Spiele, die lange nur mit Stick gespielt werden, also
+  ausnehmen oder die Spiel-Wartezeit verlängern.
 - Statusleiste und AYN-Overlays liegen vermutlich unter dem Overlay der Bedienungshilfe. Ob das auf dem Thor immer gilt,
   zeigt der Test.
 
 ## Datenschutz
 
-Keine Internet-Berechtigung, kein Speicherzugriff. Bildschirmfotos werden sofort auf ein grobes Helligkeitsraster
-verkleinert und nur im Arbeitsspeicher verglichen; nichts wird gespeichert oder gesendet. Tasten werden nicht
-aufgezeichnet, nur der Zeitpunkt der letzten Eingabe. Fensterinhalte und Texte liest der Dienst nicht
+Keine Internet-Berechtigung, kein Speicherzugriff. Tasten werden nicht aufgezeichnet, nur der Zeitpunkt der letzten
+Eingabe. Bildschirmfotos gibt es nur mit eingeschaltetem Spielschutz; sie werden sofort auf ein grobes
+Helligkeitsraster verkleinert und nur im Arbeitsspeicher verglichen, nichts wird gespeichert oder gesendet. Fensterinhalte und Texte liest der Dienst nicht
 (`canRetrieveWindowContent=false`).
 
 ## Entwicklung
@@ -121,9 +122,9 @@ aufgezeichnet, nur der Zeitpunkt der letzten Eingabe. Fensterinhalte und Texte l
   Vorabversion. Android Studio ist nicht nötig.
 - Lokal: `./gradlew :app:testReleaseUnitTest :app:assembleRelease` (Android SDK nötig).
 - Aufbau:
-  - `engine/` ist reine Logik mit Tests: `GuardEngine` (Zustände je Bildschirm), `StaticMap` (Bildanalyse),
+  - `engine/` ist reine Logik mit Tests: `GuardEngine` (Zustände je Bildschirm), `StaticMap` (Spielschutz-Analyse),
     `MaskAnimator`, `TransferMeter`, `Gamepads`.
-  - `GuardianAccessibilityService`: Eingaben, Overlays, Bildschirmfotos
+  - `GuardianAccessibilityService`: Eingaben, Medienwiedergabe, Overlays, Spielschutz
   - `ProbeService`/`Probe`: Präzisionsmodus über Shizuku
   - `SaverView`, `MaskView`, `MainActivity`, Kacheln
 - Signatur: Vorab-Schlüssel `guardian-dev.keystore` im Repository, damit Updates ohne Deinstallieren gehen. Ein eigener
